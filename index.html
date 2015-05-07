@@ -1,15 +1,135 @@
-<!DOCTYPE html>
+<!doctype html>
 <html>
   <head>
-    <meta charset="utf-8">
     <link rel="stylesheet" type="text/css" href="https://cdn.mxpnl.com/libs/mixpanel-platform/css/reset.css">
     <link rel="stylesheet" type="text/css" href="https://cdn.mxpnl.com/libs/mixpanel-platform/build/mixpanel-platform.v0.latest.min.css">
     <script src="https://cdn.mxpnl.com/libs/mixpanel-platform/build/mixpanel-platform.v0.latest.min.js"></script>
   </head>
   <body class="mixpanel-platform-body">
-    <h1>Hello, World!</h1>
+    <div class="mixpanel-platform-section">
+      <div class="titles">
+        <h1 style="font-size: 18px; color: rgb(95,105,131)">Multilevel-Segmentation Report</h1><br/>
+      </div>
+      
+      <div id="eventSelect" style="float: left;"></div>
+      
+      <div id="by" class="mixpanel-platform-label" style="margin-left: 10px; display: none;">by</div>
+      <div id="propSelect" style="float: left;"></div>
+      <div id="dateSelect" style="float: right;"></div><br/><br/><br/>
+      
+      <div id="byTwo" class="mixpanel-platform-label" style="margin-left: 270px; display: none;">and</div>
+      <div id="propSelectTwo" style="float: left;"></div>
+      
+      <div id="mpselect" style="float: right;"></div><br/><br/><br/>
+      <div style="clear: both;"></div>
+      <div id="graph"></div>
+      <div id="mpchart"></div>
+    </div>
+    <div id="table"></div>
     <script>
-      // Run queries and display results here
+      MP.api.ready(function() {
+        
+        var options = {
+          items: [
+            {label: 'Total', value: 'general'},
+            {label: 'Unique', value: 'unique'},
+            {label: 'Average', value: 'average'}
+            ]
+        };
+        var eventSelect = $('#eventSelect').MPEventSelect();
+        var propSelect  = $('#propSelect').MPPropertySelect();
+        var propSelectTwo  = $('#propSelectTwo').MPPropertySelect();
+        var dateSelect  = $('#dateSelect').MPDatepicker();
+        var typeSelect  = $('#mpselect').MPSelect(options);
+        var eventGraph  = $('#graph').MPChart({chartType: 'bar'});
+        var eventStackedGraph  = $('#mpchart').MPChart({chartType: 'bar', stacked: true});
+        var eventTable  = $('#table').MPTable({
+          showPercentages: false,
+        });
+        
+        
+        //convenience method for grabbing that datepicker value
+        getDates = function() {
+          return dateSelect.MPDatepicker('value')
+        }
+
+        //find interval for bar chart 'interval' param
+        getInterval = function(dates) {
+          intervalDays = Math.ceil((dates.to - dates.from) / (24 * 60 * 60 * 1000)) + 1
+          return intervalDays
+        }
+
+        var runQuery = function() {
+          //obtain event, property, date range and type values
+          var eventName = eventSelect.MPEventSelect('value'),
+              propName  = propSelect.MPPropertySelect('value'),
+              propNameTwo = propSelectTwo.MPPropertySelect('value')
+              dateRange = dateSelect.MPDatepicker('value'),
+              typeName  = typeSelect.MPSelect('value');
+              
+          //set parameters for multisegmentation API
+          if (eventName && propName && propNameTwo) {
+            var endpoint = '/api/2.0/segmentation/multiseg';
+            var dates = getDates();
+            var params =  $.extend({}, dates, {
+              'type': typeName,
+              'inner': 'properties[\"' + propNameTwo + '\"]',
+              'outer': 'properties[\"' + propName + '\"]',
+              'event': eventName,
+              'interval': getInterval(dates)
+            });
+            
+            //get the data from the API and reorganize the data
+            MP.api.query(endpoint, params).done(function(results) {
+              var output = {}
+              var query = results["data"]["values"]
+              
+              _.each(_.keys(query), function(properties){
+                var property = query[properties]
+                
+                _.each(_.keys(property), function(propertiesTwo){
+                  if (!output[propertiesTwo]) {
+                    output[propertiesTwo] = {}
+                  }
+                  var propertyTwo = property[propertiesTwo]
+                  var sum = 0;
+                
+                  _.each(_.keys(propertyTwo), function(dates){
+                    sum = sum + propertyTwo[dates]
+                  });
+                  
+                  output[propertiesTwo][properties] = sum;
+                  
+                });
+              });
+              
+              console.log(output)
+              
+              //create graph and table
+              eventStackedGraph.MPChart('setData', output);  
+              eventTable.MPTable('setData', output);
+              
+            });
+          } else if (eventName && propName) {
+            MP.api.segment(eventName, propName, dateRange).done(function(results) {
+              eventGraph.MPChart('setData', results);
+              eventTable.MPTable('setData', results);
+            });
+          }
+        };
+        
+        //actions when dropdowns change
+        eventSelect.on('change', function(e, eventName) {
+          propSelect.MPPropertySelect('setEvent', eventName);
+          $("#by").show();
+          propSelectTwo.MPPropertySelect('setEvent', eventName);
+          $("#byTwo").show();
+          runQuery();
+        });
+        propSelectTwo.on('change', runQuery);
+        dateSelect.on('change', runQuery);
+        typeSelect.on('change', runQuery);
+      });
     </script>
   </body>
 </html>
